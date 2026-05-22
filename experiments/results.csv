@@ -1,0 +1,6 @@
+experiment_id,model_config,cpu_config,compiler_flags,accuracy_subset,latency_cycles,latency_ms,throughput_inf_per_s,binary_size_bytes,luts,ffs,bram_bits,dsp_used,clock_mhz,notes
+E1,M1_4_8,P0_RV32IC,-O2,,,,,,,,,,,
+E2,M1_4_8,P1_RV32IMC,-O2,,,,,,,,,,,
+E3,M1_4_8,P2_RV32IMC_FAST_MUL,-O2,,,,,,,,,,,
+E4,M1_4_8,P2_RV32IMC_FAST_MUL,-O3,,,,,,,,,,,
+E5,M0_2_4,P2_RV32IMC_FAST_MUL,-O3,,,,,,,,,,,
