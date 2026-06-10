@@ -27,7 +27,7 @@ def read_until(ser, token: bytes, timeout: float, poke: bytes | None = None) -> 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", default="/dev/ttyUSB2")
-    parser.add_argument("--bin", type=Path, default=Path("firmware/neorv32_exe.bin"))
+    parser.add_argument("--bin", type=Path, default=Path("neorv32_exe.bin"))
     parser.add_argument("--baud", type=int, default=115200)
     args = parser.parse_args()
 

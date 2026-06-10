@@ -14,7 +14,7 @@ from PIL import Image
 def main() -> int:
     parser = argparse.ArgumentParser(description="Classify a custom image on the Tang Nano 9K NEORV32.")
     parser.add_argument("image_path", type=Path, help="Path to the JPG/PNG image")
-    parser.add_argument("--port", default="/dev/ttyUSB2", help="Serial port of the board")
+    parser.add_argument("--port", default="/dev/ttyUSB1", help="Serial port of the board")
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate")
     parser.add_argument("--invert", choices=["auto", "yes", "no"], default="auto",
                         help="Invert colors (MNIST needs white digit on black background)")
@@ -42,8 +42,8 @@ def main() -> int:
         should_invert = True
     elif args.invert == "no":
         should_invert = False
-    else:  # auto
-        # If average color is light (background is white/light gray), invert
+    else:
+        # Fundo branco
         if mean_val > 127:
             should_invert = True
 
@@ -58,12 +58,10 @@ def main() -> int:
     print(f"Connecting to Tang Nano 9K on {args.port}...")
     try:
         with serial.Serial(args.port, args.baud, timeout=5.0) as ser:
-            # Send frame
             ser.write(frame)
             ser.flush()
             print("Image sent! Waiting for prediction...")
 
-            # Read response
             response = ser.readline().decode("ascii", errors="replace").strip()
             print(f"\nResponse from Board: {response}\n")
     except Exception as e:

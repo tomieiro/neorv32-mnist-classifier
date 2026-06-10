@@ -7,9 +7,18 @@ import struct
 import time
 from pathlib import Path
 
+import numpy as np
 import serial
 
-from utils.dataset import load_mnist_uint8
+
+def load_mnist_uint8():
+    from tensorflow.keras.datasets import mnist
+
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    return (x_train.astype(np.uint8), y_train.astype(np.uint8)), (
+        x_test.astype(np.uint8),
+        y_test.astype(np.uint8),
+    )
 
 
 def main() -> None:

@@ -9,13 +9,14 @@ deps:
 	$(PY) -m pip install -r requirements.txt
 
 train:
-	$(PY) -m train.train_cnn --epochs 4
+	$(PY) -m train.train train --epochs 5
 
 export:
-	$(PY) -m train.quantize_export
+	$(PY) -m train.train export
 
 validate:
-	$(PY) -m train.validate_int8 --limit 1000
+	@echo "host-side int8 validation was removed"
+	@echo "use firmware build/upload plus UART inference to validate the exported model"
 
 send:
 	$(PY) -m deploy.send_uart --port $(PORT) --count $(COUNT) --out $(OUT)
@@ -23,7 +24,7 @@ send:
 summary:
 	$(PY) -m deploy.summarize_uart $(OUT)
 
-all: train export validate
+all: train export
 
 clean:
 	rm -rf __pycache__

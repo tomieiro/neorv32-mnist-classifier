@@ -142,7 +142,7 @@ static int argmax_i32(const int32_t *values, uint32_t n) {
   return best;
 }
 
-int mnist_predict(const uint8_t input[MNIST_IMAGE_SIZE]) {
+static int mnist_predict(const uint8_t input[MNIST_IMAGE_SIZE]) {
   conv1_pool1_i8(input);
   conv2_3x3_i8();
   maxpool2x2_i16(conv2_out, pool2_out, CONV2_OUT_W, POOL2_OUT_W, POOL2_OUT_H, CONV2_OUT_CH);
@@ -150,6 +150,10 @@ int mnist_predict(const uint8_t input[MNIST_IMAGE_SIZE]) {
   return argmax_i32(logits, DENSE_OUT_SIZE);
 }
 
-const int32_t *mnist_get_last_logits(void) {
-  return logits;
+void mnist_model_init(void) {
+}
+
+void mnist_model_run(const uint8_t input[MNIST_IMAGE_SIZE], mnist_inference_result_t *result) {
+  result->pred = mnist_predict(input);
+  result->logits = logits;
 }

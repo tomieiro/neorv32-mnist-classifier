@@ -9,7 +9,10 @@
 static uint8_t image[MNIST_IMAGE_SIZE];
 
 int main(void) {
+  mnist_inference_result_t result;
+
   platform_init();
+  mnist_model_init();
   platform_puts("MNIST_NEORV32_READY\n");
 
   while (1) {
@@ -20,8 +23,8 @@ int main(void) {
     }
 
     uint64_t start = get_cycles64();
-    int pred = mnist_predict(image);
+    mnist_model_run(image, &result);
     uint64_t end = get_cycles64();
-    uart_send_result(pred, end - start);
+    uart_send_result(result.pred, end - start);
   }
 }

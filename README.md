@@ -6,12 +6,13 @@ Para a sequencia curta de uso, veja `FLOW.md`.
 
 ## Layout
 
-- `host/train/`: treino, exportacao e validacao int8.
+- `host/train/train.py`: entrada do CLI de treino/exportacao.
+- `host/train/config.py`: parametros da rede e da exportacao para facilitar ajustes.
+- `host/train/quantize.py`: quantizacao e geracao dos headers C usados pelo firmware (`weights.h` e `model_meta.h`).
 - `host/deploy/`: envio UART e resumo de resultados.
-- `host/utils/`: utilitarios compartilhados.
 - `firmware/`: C bare-metal para NEORV32, sem malloc, filesystem, SO ou bibliotecas de host.
 - `experiments/`: CSV de resultados, notas e graficos de Pareto.
-- `scripts/`: comandos auxiliares para build, upload e coleta.
+- `scripts/`: comandos auxiliares para build e coleta.
 
 ## Fluxo rapido
 
@@ -34,9 +35,9 @@ make exe USER_FLAGS="-Ofast"
 Envio de imagens para a placa:
 
 ```sh
-cd ..
-python3 scripts/upload.py --port /dev/ttyUSB2
-cd host
+cd ../firmware
+python3 deploy/upload.py --port /dev/ttyUSB2 --bin neorv32_legacy_exe.bin
+cd ../host
 make send summary PORT=/dev/ttyUSB2 COUNT=100
 ```
 
@@ -76,4 +77,4 @@ cd mnist_neorv32/experiments
 python3 pareto_plot.py
 ```
 
-`latency_cycles` deve medir apenas `mnist_predict()`. O round-trip UART fica separado no CSV gerado por `host/deploy/send_uart.py`.
+`latency_cycles` deve medir apenas `mnist_model_run()`. O round-trip UART fica separado no CSV gerado por `host/deploy/send_uart.py`. A validacao funcional do modelo exportado passa a ser feita no firmware/placa, nao por simulacao int8 no host.

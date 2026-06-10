@@ -1,0 +1,19 @@
+@aicp v=semver:0.3.0 id=neorv32-mnist-classifier kind=project summary="Bare-metal NEORV32 MNIST classifier with Python host training/export and UART image inference"
+@stack lang=set[enum]:[python,c,make] runtime=set[enum]:[python3,neorv32-bare-metal] infra=set[enum]:[uart,fpga] package=list[path]:[host/requirements.txt] lock=list[path]:[]
+@agent read=list[atom]:[@aicp,@stack,@mod,@surface,@resolver,@contract,@flow,@inv,@task] verify=bool:true update_on_arch_change=bool:true max_context_ratio=float:0.05 mode=guided
+@avoid paths=list[glob]:[firmware/build/**,firmware/generated/**,host/generated/**,**/__pycache__/**,*.elf,*.bin,coverage/**,dist/**,build/**]
+@cmd host-build "cd host && make all"
+@cmd firmware-build "cd firmware && make all"
+@mod host-train kind=core owns=set[id]:[training,quantization,header-export] entry=list[path]:[host/train/train.py,host/train/config.py,host/train/quantize.py] risk=set[enum]:[model-correctness,generated-artifacts] test=list[path]:[] evidence=list[path]:[README.md,host/Makefile,host/requirements.txt]
+@mod host-deploy kind=adapter owns=set[id]:[uart-send,uart-summary] entry=list[path]:[host/deploy/send_uart.py,host/deploy/summarize_uart.py,classify_image.py] risk=set[enum]:[protocol-compatibility,image-preprocessing] test=list[path]:[] evidence=list[path]:[README.md,classify_image.py]
+@mod firmware kind=core owns=set[id]:[neorv32-inference,uart-protocol] entry=list[path]:[firmware/src/main.c,firmware/src/infer.c,firmware/util/uart_protocol.c,firmware/headers/infer.h] risk=set[enum]:[embedded-memory,protocol-compatibility,integer-quantization] test=list[path]:[] evidence=list[path]:[README.md,firmware/Makefile]
+@surface uart-image-frame owner=mod.host-deploy kind=protocol visibility=semi-public evidence=list[path]:[README.md,classify_image.py] summary="Host sends 'MN', a little-endian uint16 payload length, then 784 uint8 MNIST pixels"
+@contract mnist-uart-frame source=list[path]:[README.md,classify_image.py,firmware/util/uart_protocol.c] rule="UART image payload is exactly 28x28 uint8 pixels after the MN header and length field"
+@flow custom-image-inference steps=list[id]:[load-image,grayscale,resize-28x28,optional-invert,send-uart,receive-prediction] evidence=list[path]:[classify_image.py,README.md]
+@inv mnist-input-shape scope=set[id]:[host-deploy,firmware] rule="custom images sent to firmware must be 28x28 grayscale uint8 pixels" evidence=list[path]:[README.md,classify_image.py]
+@inv generated-headers-source scope=set[id]:[firmware,host-train] rule="firmware generated headers are copied from host/generated and should not be hand-edited" evidence=list[path]:[firmware/Makefile]
+@resolver edit-image-preprocess target=mod.host-deploy intent=edit go=list[path]:[classify_image.py,README.md] use=list[enum]:[search,tests] avoid=list[glob]:[firmware/generated/**,host/generated/**,firmware/build/**] verify=list[string]:["python3 -m py_compile classify_image.py"]
+@resolver edit-firmware target=mod.firmware intent=edit go=list[path]:[firmware/src,firmware/util,firmware/headers,firmware/Makefile] use=list[enum]:[search,tests] avoid=list[glob]:[firmware/build/**,firmware/generated/**] verify=list[string]:[@cmd.firmware-build]
+@policy require-validation scope=global severity=high rule="changed modules should run the matching resolver verification when available" enforce=list[id]:[local]
+@risk stale-context level=medium scope=set[id]:[global] mitigation="update AICP when architecture, contracts, surfaces, invariants, dependencies, risks, tasks, or resolvers change"
+@task visualize-preprocessed-image status=complete touch=list[path]:[one.jpg,one_28x28_inverted.png,one_28x28_inverted_preview.png] validate=list[string]:["python3 - <<'PY'\nfrom PIL import Image\nimg=Image.open('one_28x28_inverted.png')\nassert img.size == (28, 28) and img.mode == 'L'\nPY"]

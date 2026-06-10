@@ -1,25 +1,20 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
-
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
 import numpy as np
 import tensorflow as tf
 
-from utils.dataset import load_mnist_uint8
-
-
-MODEL_PATH = Path("generated/mnist_cnn_4_8.keras")
-OUT_DIR = Path("generated")
-FW_DIR = Path("../firmware/generated")
-
-CONV1_SHIFT = 7
-CONV2_SHIFT = 7
-DENSE_SHIFT = 7
-INPUT_ZERO_POINT = 0
+from train.config import (
+    CONV1_SHIFT,
+    CONV2_SHIFT,
+    DENSE_SHIFT,
+    FW_DIR,
+    INPUT_ZERO_POINT,
+    MODEL_PATH,
+    OUT_DIR,
+)
 
 
 def quantize_symmetric(values: np.ndarray) -> tuple[np.ndarray, float]:
@@ -63,29 +58,22 @@ static const int32_t mnist_dense_bias[10] = {c_array(arrays["dense_b"])};
 
 #endif
 """
-    (_, _), (x_test, y_test) = load_mnist_uint8()
-    test_h = f"""#ifndef TEST_IMAGES_H
-#define TEST_IMAGES_H
-
-#include <stdint.h>
-
-#define MNIST_TEST_IMAGE_COUNT 16
-static const uint8_t mnist_test_images[16][784] = {c_array(x_test[:16].reshape(16, 784))};
-static const uint8_t mnist_test_labels[16] = {c_array(y_test[:16])};
-
-#endif
-"""
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     FW_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "weights.h").write_text(weights_h)
     (OUT_DIR / "model_meta.h").write_text(meta_h)
-    (OUT_DIR / "test_images.h").write_text(test_h)
-    for name in ("weights.h", "model_meta.h", "test_images.h"):
+    for name in ("weights.h", "model_meta.h"):
         shutil.copy2(OUT_DIR / name, FW_DIR / name)
+    for stale_path in (
+        OUT_DIR / "test_images.h",
+        FW_DIR / "test_images.h",
+        FW_DIR / MODEL_PATH.name,
+    ):
+        stale_path.unlink(missing_ok=True)
 
 
-def main() -> None:
+def run_export() -> None:
     model = tf.keras.models.load_model(MODEL_PATH)
     conv1_w, conv1_b = model.layers[0].get_weights()
     conv2_w, conv2_b = model.layers[2].get_weights()
@@ -112,7 +100,3 @@ def main() -> None:
     }
     write_headers(arrays)
     print("exported=generated -> ../firmware/generated")
-
-
-if __name__ == "__main__":
-    main()
