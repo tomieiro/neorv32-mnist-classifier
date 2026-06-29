@@ -2,14 +2,29 @@
 
 #include <stdint.h>
 
+#include "accel.h"
 #include "cnn_params.h"
 #include "generated/model_meta.h"
 #include "generated/weights.h"
 
-static int16_t pool1_out[POOL1_OUT_W * POOL1_OUT_H * CONV1_OUT_CH];
-static int16_t conv2_out[CONV2_OUT_W * CONV2_OUT_H * CONV2_OUT_CH];
-static int16_t pool2_out[POOL2_OUT_W * POOL2_OUT_H * CONV2_OUT_CH];
+static int16_t pool1_out[POOL1_OUT_W * POOL1_OUT_H * CONV1_OUT_CH] __attribute__((aligned(4)));
+static int16_t conv2_out[CONV2_OUT_W * CONV2_OUT_H * CONV2_OUT_CH] __attribute__((aligned(4)));
+static int16_t pool2_out[POOL2_OUT_W * POOL2_OUT_H * CONV2_OUT_CH] __attribute__((aligned(4)));
 static int32_t logits[DENSE_OUT_SIZE];
+
+// The generated weight arrays live in .rodata, i.e. in the user flash behind
+// the XBUS: every load pays a multi-cycle flash transaction. Copied to RAM
+// once in mnist_model_init() so the C fallback paths only touch the DMEM.
+static int8_t conv1_w_ram[CONV1_OUT_CH][CONV1_IN_CH][3][3];
+static int8_t conv2_w_ram[CONV2_OUT_CH][CONV2_IN_CH][3][3];
+static int8_t dense_w_ram[DENSE_OUT_SIZE][DENSE_IN_SIZE] __attribute__((aligned(4)));
+static int32_t conv1_b_ram[CONV1_OUT_CH];
+static int32_t conv2_b_ram[CONV2_OUT_CH];
+static int32_t dense_b_ram[DENSE_OUT_SIZE];
+
+#if MNIST_USE_ACCEL
+static int accel_ok;
+#endif
 
 static inline int32_t mac_i8(int32_t acc, int16_t a, int8_t b) {
   return acc + ((int32_t)a * (int32_t)b);
@@ -34,12 +49,12 @@ static inline uint32_t idx3(uint32_t y, uint32_t x, uint32_t c, uint32_t w, uint
 
 static int16_t conv1_pixel_i8(const uint8_t input[MNIST_IMAGE_SIZE],
                               uint32_t oy, uint32_t ox, uint32_t oc) {
-  int32_t acc = mnist_conv1_bias[oc];
+  int32_t acc = conv1_b_ram[oc];
   for (uint32_t ky = 0; ky < 3; ky++) {
     for (uint32_t kx = 0; kx < 3; kx++) {
       uint32_t in_idx = ((oy + ky) * MNIST_IMAGE_W) + ox + kx;
       int16_t pix = (int16_t)input[in_idx] - (int16_t)MNIST_INPUT_ZERO_POINT;
-      acc = mac_i8(acc, pix, mnist_conv1_weights[oc][0][ky][kx]);
+      acc = mac_i8(acc, pix, conv1_w_ram[oc][0][ky][kx]);
     }
   }
   return relu_shift_clip(acc, MNIST_CONV1_SHIFT);
@@ -98,15 +113,55 @@ static void maxpool2x2_i16(const int16_t *input, int16_t *output,
 }
 
 static void conv2_3x3_i8(void) {
+#if MNIST_USE_ACCEL
+  if (accel_ok) {
+    for (uint32_t oy = 0; oy < CONV2_OUT_H; oy++) {
+      for (uint32_t ox = 0; ox < CONV2_OUT_W; ox++) {
+        accel_conv2_start();
+        for (uint32_t ky = 0; ky < 3; ky++) {
+          for (uint32_t kx = 0; kx < 3; kx++) {
+            const int16_t *a =
+                &pool1_out[idx3(oy + ky, ox + kx, 0, POOL1_OUT_W, CONV2_IN_CH)];
+            accel_conv2_push_kpos(accel_pack_i16x2(a[0], a[1]),
+                                  accel_pack_i16x2(a[2], a[3]));
+          }
+        }
+
+        uint32_t pair = ACCEL_OUT01;
+        conv2_out[idx3(oy, ox, 0, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_lo_i16(pair);
+        conv2_out[idx3(oy, ox, 1, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_hi_i16(pair);
+        pair = ACCEL_OUT23;
+        conv2_out[idx3(oy, ox, 2, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_lo_i16(pair);
+        conv2_out[idx3(oy, ox, 3, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_hi_i16(pair);
+        pair = ACCEL_OUT45;
+        conv2_out[idx3(oy, ox, 4, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_lo_i16(pair);
+        conv2_out[idx3(oy, ox, 5, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_hi_i16(pair);
+        pair = ACCEL_OUT67;
+        conv2_out[idx3(oy, ox, 6, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_lo_i16(pair);
+        conv2_out[idx3(oy, ox, 7, CONV2_OUT_W, CONV2_OUT_CH)] =
+            accel_unpack_hi_i16(pair);
+      }
+    }
+    return;
+  }
+#endif
+
   for (uint32_t oy = 0; oy < CONV2_OUT_H; oy++) {
     for (uint32_t ox = 0; ox < CONV2_OUT_W; ox++) {
       for (uint32_t oc = 0; oc < CONV2_OUT_CH; oc++) {
-        int32_t acc = mnist_conv2_bias[oc];
+        int32_t acc = conv2_b_ram[oc];
         for (uint32_t ic = 0; ic < CONV2_IN_CH; ic++) {
           for (uint32_t ky = 0; ky < 3; ky++) {
             for (uint32_t kx = 0; kx < 3; kx++) {
               int16_t a = pool1_out[idx3(oy + ky, ox + kx, ic, POOL1_OUT_W, CONV2_IN_CH)];
-              acc = mac_i8(acc, a, mnist_conv2_weights[oc][ic][ky][kx]);
+              acc = mac_i8(acc, a, conv2_w_ram[oc][ic][ky][kx]);
             }
           }
         }
@@ -119,9 +174,9 @@ static void conv2_3x3_i8(void) {
 
 static void dense_i8(void) {
   for (uint32_t o = 0; o < DENSE_OUT_SIZE; o++) {
-    int32_t acc = mnist_dense_bias[o];
+    int32_t acc = dense_b_ram[o];
     for (uint32_t i = 0; i < DENSE_IN_SIZE; i++) {
-      acc = mac_i8(acc, pool2_out[i], mnist_dense_weights[o][i]);
+      acc = mac_i8(acc, pool2_out[i], dense_w_ram[o][i]);
     }
     if (MNIST_DENSE_SHIFT != 0) {
       acc >>= MNIST_DENSE_SHIFT;
@@ -151,6 +206,15 @@ static int mnist_predict(const uint8_t input[MNIST_IMAGE_SIZE]) {
 }
 
 void mnist_model_init(void) {
+  __builtin_memcpy(conv1_w_ram, mnist_conv1_weights, sizeof(conv1_w_ram));
+  __builtin_memcpy(conv2_w_ram, mnist_conv2_weights, sizeof(conv2_w_ram));
+  __builtin_memcpy(dense_w_ram, mnist_dense_weights, sizeof(dense_w_ram));
+  __builtin_memcpy(conv1_b_ram, mnist_conv1_bias, sizeof(conv1_b_ram));
+  __builtin_memcpy(conv2_b_ram, mnist_conv2_bias, sizeof(conv2_b_ram));
+  __builtin_memcpy(dense_b_ram, mnist_dense_bias, sizeof(dense_b_ram));
+#if MNIST_USE_ACCEL
+  accel_ok = accel_present();
+#endif
 }
 
 void mnist_model_run(const uint8_t input[MNIST_IMAGE_SIZE], mnist_inference_result_t *result) {

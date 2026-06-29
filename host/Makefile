@@ -1,6 +1,6 @@
 PY ?= python3
 PORT ?= /dev/ttyUSB2
-COUNT ?= 20
+COUNT ?= 10
 OUT ?= ../experiments/uart_results.csv
 
 .PHONY: deps train export validate send summary all clean

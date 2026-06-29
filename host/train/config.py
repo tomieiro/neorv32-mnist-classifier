@@ -8,6 +8,7 @@ TRAIN_VALIDATION_SPLIT = 0.1
 MODEL_PATH = Path("generated/mnist_cnn_4_8.keras")
 OUT_DIR = Path("generated")
 FW_DIR = Path("../firmware/generated")
+FPGA_SRC_DIR = Path("../../tang_nano_9k_neorv32/src")
 
 INPUT_SHAPE = (28, 28, 1)
 CONV1_FILTERS = 4

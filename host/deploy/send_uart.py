@@ -25,7 +25,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
     parser.add_argument("--baud", type=int, default=115200)
-    parser.add_argument("--count", type=int, default=20)
+    parser.add_argument("--count", type=int, default=10)
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("../experiments/uart_results.csv"))
     parser.add_argument("--timeout", type=float, default=5.0)

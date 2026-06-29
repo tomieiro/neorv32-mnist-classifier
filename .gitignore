@@ -7,3 +7,5 @@ firmware/neorv32_exe.bin
 firmware/neorv32_legacy_exe.bin
 firmware/main.bin
 firmware/main.asm
+firmware/generated/
+*.bin
